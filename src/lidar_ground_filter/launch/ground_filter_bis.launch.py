@@ -31,8 +31,8 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'base_frame': 'base_link',
-            'voxel_size': 0.1,
-            'distance_threshold': 0.10,
+            'voxel_size': 0.03,
+            'distance_threshold': 0.08,
             'plane_slope_threshold': 15.0,
         }],
         remappings=[
