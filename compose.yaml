@@ -9,12 +9,14 @@ services:
     network_mode: "host"
     ipc: host
     privileged: true
+    devices:
+      - "/dev/video0:/dev/video0"
     environment:
       - DISPLAY=:0
       - XAUTHORITY=/root/.Xauthority
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
-      - ROS_DOMAIN_ID=0
+      - ROS_DOMAIN_ID=4
       - PYTHONUNBUFFERED=1
     volumes:
       - ~/vacop_jetson:/root/vacop_ws
@@ -26,7 +28,7 @@ services:
     working_dir: /root/vacop_ws
     command: >
       bash -c "source /opt/ros/humble/install/setup.bash &&
-               python3 /root/vacop_ws/src/vacop_vision/vacop_vision/vision/vision_node.py"
+             python3 /root/vacop_ws/src/vacop_vision/vacop_vision/vision/vision_node.py"
 
   # ---------------------------------------------------------
   # SERVICE 2 : MAPPING 
@@ -46,7 +48,7 @@ services:
       - XAUTHORITY=/root/.Xauthority
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
-      - ROS_DOMAIN_ID=0
+      - ROS_DOMAIN_ID=4
       - ROS_VERSION=2
       - ROS_DISTRO=humble
     volumes:
@@ -61,7 +63,8 @@ services:
                colcon build --symlink-install --packages-select rslidar_msg &&
                source install/setup.bash &&
                echo '--- Etape 2: LiDAR et Mapping ---' &&
-               colcon build --symlink-install --packages-select rslidar_sdk vacop_mapping &&
+               colcon build --symlink-install --packages-select rslidar_sdk vacop_mapping vacop planif_locale rtabmap_localization odometry &&
                source install/setup.bash &&
                export AMENT_PREFIX_PATH=/root/vacop_ws/install:$$AMENT_PREFIX_PATH &&
                ros2 launch vacop_mapping rtabmap_lidar_launch.py"
+              

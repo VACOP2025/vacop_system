@@ -29,7 +29,7 @@ def generate_launch_description():
         executable='icp_odometry',
         output='screen',
         parameters=[{
-            'frame_id': 'rslidar',
+            'frame_id': 'base_link',
             'odom_frame_id': 'odom',
             'publish_tf': True,
             'wait_for_transform': 0.2,
@@ -52,7 +52,7 @@ def generate_launch_description():
         executable='rtabmap', 
         output='screen',
         parameters=[{
-            'frame_id': 'rslidar',
+            'frame_id': 'base_link',
             'map_frame_id': 'map',
             'subscribe_rgb': False,
             'subscribe_depth': False,       

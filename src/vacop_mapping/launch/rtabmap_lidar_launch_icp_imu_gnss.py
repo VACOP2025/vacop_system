@@ -7,14 +7,14 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     
-    # --- CONFIGURATION DES TOPICS (Vérifiez les noms !) ---
+    # --- CONFIGURATION DES TOPICS ---
     lidar_topic = '/rslidar_points'
     gps_topic   = '/gps/fix'
     imu_topic   = '/imu/data'      
     
     # --- CONFIGURATION DES FRAMES ---
     robot_frame = 'base_link' 
-    odom_frame  = 'odom_lidar'
+    odom_frame  = 'odom'
     
     # --- PARTIE 1 : Driver Lidar ---
     try:
@@ -95,8 +95,8 @@ def generate_launch_description():
             'gps_topic': gps_topic,
             'Rtabmap/LoopGPS': 'true',
             
-            # --- IMU (NOUVEAU) ---
-            'wait_imu_to_init': True, # Attend que l'IMU soit stable pour démarrer
+            # --- IMU ---
+            'wait_imu_to_init': True,
             
             # Tuning SLAM
             'Reg/Strategy': '1',             
