@@ -1,3 +1,5 @@
+""" Fichier principal pour exécuter les modèles """
+
 import cv2
 import torch
 import numpy as np
@@ -8,10 +10,17 @@ import tensorrt as trt
 from ultralytics import YOLO
 import torchvision.transforms as T
 import gc
+import subprocess
+
+
 
 # --- CONFIGURATION ---
-VIDEO_PATH = "../../videos/campus1_60fps.mp4"
-START_AT_MINUTE = 0
+
+CAMERA_INDEX = 0  # "/dev/video0"
+CAMERA_WIDTH = 1280
+CAMERA_HEIGHT = 720
+CAMERA_FPS = 30
+
 YOLO_ENGINE = "../models/yolo26s.engine"
 TWINLITE_ENGINE = "../models/twinlite.engine"
 CLASSIFIER_ENGINE = "../models/classifier.engine"
@@ -20,16 +29,11 @@ CONF_THRESH = 0.25
 CLS_CONF_THRESH = 0.85
 YOLO_IMG_SIZE = 320
 
-# Cible FPS
-TARGET_FPS = 60
-TARGET_FRAME_TIME = 1.0 / TARGET_FPS 
-
 COLORS = {
     'Red': (0, 0, 255), 'Green': (0, 255, 0), 'Yellow': (0, 255, 255),
     'Car': (100, 100, 100), 'Person': (255, 100, 0), 'Stop': (0, 0, 128)
 }
 
-# --- WRAPPER TENSORRT STATIQUE ---
 class TRTModuleStatic:
     def __init__(self, engine_path, device):
         self.device = device
@@ -68,45 +72,78 @@ class TRTModuleStatic:
         self.context.execute_async_v3(stream.cuda_stream)
         return [out['tensor'] for out in self.outputs]
 
-# --- WORKER VIDEO ---
-class FastVideoReader:
-    def __init__(self, path, start_min=0, queue_size=2):
-        self.cap = cv2.VideoCapture(path)
-        self.q = queue.Queue(maxsize=queue_size)
+
+class USBCameraReader:
+    """Lecteur de caméra USB optimisé avec thread séparé pour la capture."""
+    
+    def __init__(self, camera_index=0, width=1280, height=720, fps=30, queue_size=2):
         self.stopped = False
+        self.q = queue.Queue(maxsize=queue_size)
         
-        # --- MODIF ICI : SEEK A LA MINUTE DEMANDEE ---
-        if start_min > 0:
-            print(f"Seek video à {start_min} minutes...")
-            self.cap.set(cv2.CAP_PROP_POS_MSEC, start_min * 60 * 1000)
-            
+        # Ouvrir la caméra avec le backend V4L2 (optimisé pour Linux/Jetson)
+        self.cap = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
+        
+        if not self.cap.isOpened():
+            raise RuntimeError(f"Impossible d'ouvrir la caméra {camera_index}")
+        
+        # Configuration de la caméra
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self.cap.set(cv2.CAP_PROP_FPS, fps)
+        
+        # Optionnel : utiliser MJPG pour de meilleures performances
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        
+        # Réduire le buffer interne de la caméra pour minimiser la latence
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
+        # Récupérer les dimensions réelles
         self.w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
         
+        print(f" Caméra ouverte: {self.w}x{self.h} @ {actual_fps} FPS")
+        
+        # Démarrer le thread de capture
         self.t = threading.Thread(target=self.update, daemon=True)
         self.t.start()
 
     def update(self):
+        """Thread de capture en continu."""
         while not self.stopped:
-            if not self.q.full():
-                ret, frame = self.cap.read()
-                if not ret:
-                    self.stopped = True
-                    break
-                self.q.put(frame)
-            else:
-                time.sleep(0.001)
+            ret, frame = self.cap.read()
+            if not ret:
+                print(" Erreur de lecture caméra")
+                time.sleep(0.01)
+                continue
+            
+            # Si la queue est pleine, on jette l'ancienne frame (toujours garder la plus récente)
+            if self.q.full():
+                try:
+                    self.q.get_nowait()
+                except queue.Empty:
+                    pass
+            
+            self.q.put(frame)
+        
         self.cap.release()
 
     def read(self):
-        return self.q.get() if not self.q.empty() else None
+        """Récupère la dernière frame disponible."""
+        try:
+            return self.q.get(timeout=1.0)
+        except queue.Empty:
+            return None
 
     def more(self):
-        return not self.stopped or not self.q.empty()
+        """Retourne True tant que la caméra fonctionne."""
+        return not self.stopped
 
     def stop(self):
+        """Arrête proprement la capture."""
         self.stopped = True
-        self.t.join()
+        self.t.join(timeout=2.0)
+        print(" Caméra fermée")
 
 # --- UTILS DESSIN ---
 def draw_labeled_box(img, x1, y1, x2, y2, label, color):
@@ -115,26 +152,32 @@ def draw_labeled_box(img, x1, y1, x2, y2, label, color):
     cv2.rectangle(img, (x1, y1 - 20), (x1 + w, y1), color, -1)
     cv2.putText(img, label, (x1, y1 - 5), 0, 0.6, (255, 255, 255), 1)
 
-def draw_hud(img, latency_ms):
-    model_fps = 1000.0 / latency_ms if latency_ms > 0 else 0
-    
-    cv2.rectangle(img, (0, 0), (300, 80), (0, 0, 0), -1)
-    cv2.addWeighted(img[0:80, 0:300], 0, img[0:80, 0:300], 1, 0)
+def draw_hud(img, latency_ms, fps):
+    cv2.rectangle(img, (0, 0), (300, 110), (0, 0, 0), -1)
     
     col_lat = (0, 255, 0) if latency_ms < 15 else ((0, 255, 255) if latency_ms < 30 else (0, 0, 255))
     cv2.putText(img, f"LATENCY: {latency_ms:.2f} ms", (10, 30), 0, 0.7, col_lat, 2)
-    cv2.putText(img, f"THEORY MAX: {model_fps:.0f} FPS", (10, 60), 0, 0.7, (200, 200, 200), 2)
+    cv2.putText(img, f"FPS: {fps:.1f}", (10, 60), 0, 0.7, (0, 255, 0), 2)
+    cv2.putText(img, "LIVE CAMERA", (10, 90), 0, 0.6, (0, 200, 255), 2)
 
-# --- MAIN ---
+def set_jetson_performance():
+    """Force le mode performance maximale sur la Jetson Orin."""
+    subprocess.run(['sudo', 'nvpmodel', '-m', '0'], check=True)
+    subprocess.run(['sudo', 'jetson_clocks'], check=True)
+        
+   
+
+
+
+# main program
 def run():
+    
+
     gc.disable()
     device = torch.device('cuda:0')
     stream = torch.cuda.Stream()
+
     
-    # Tenseurs pour le "Burn" (Busy Wait)
-    burn_size = 1024
-    dummy_a = torch.randn(burn_size, burn_size, device=device)
-    dummy_b = torch.randn(burn_size, burn_size, device=device)
     
     start_evt = torch.cuda.Event(enable_timing=True)
     end_evt = torch.cuda.Event(enable_timing=True)
@@ -153,16 +196,26 @@ def run():
     trt_cls = TRTModuleStatic(CLASSIFIER_ENGINE, device)
     cls_resize = T.Resize((32, 32))
     
-    reader = FastVideoReader(VIDEO_PATH, start_min=START_AT_MINUTE)
-    time.sleep(1.0) 
+    # --- UTILISER LA CAMERA USB ---
+    reader = USBCameraReader(
+        camera_index=CAMERA_INDEX,
+        width=CAMERA_WIDTH,
+        height=CAMERA_HEIGHT,
+        fps=CAMERA_FPS
+    )
+    time.sleep(0.5)  # Laisser la caméra s'initialiser
 
-    print("✅ Ready. Mode 'GPU Busy Wait' activé avec Scores.")
+    print(" Ready")
+
+    # Pour calculer le FPS réel
+    fps_counter = 0
+    fps_start_time = time.time()
+    current_fps = 0.0
 
     while reader.more():
-        loop_start_time = time.time()
-        
         frame = reader.read()
-        if frame is None: break
+        if frame is None: 
+            continue
         
         display_frame = frame.copy()
 
@@ -233,7 +286,6 @@ def run():
             idxs_np = idxs.numpy()
             c_map = {1: 'Green', 2: 'Red', 3: 'Yellow'}
 
-            print(f"--- DEBUG FRAME ---")
             for k in range(len(traffic_light_boxes)):
                 name = c_map.get(idxs_np[k])
                 s = scores_np[k]
@@ -244,14 +296,13 @@ def run():
         for box in results.boxes:
             cls_id = int(box.cls[0])
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            conf = box.conf[0].item()  # On récupère le score de confiance ici
+            conf = box.conf[0].item()
 
             if cls_id == 9: 
                 if light_counter in cls_results_map:
                     n, s = cls_results_map[light_counter]
                     draw_labeled_box(display_frame, x1, y1, x2, y2, f"{n} {s:.2f}", COLORS.get(n, (255,255,255)))
                 light_counter += 1
-            # --- MODIFICATION ICI : AJOUT DE {conf:.2f} ---
             elif cls_id == 2: 
                 draw_labeled_box(display_frame, x1, y1, x2, y2, f"Car {conf:.2f}", COLORS['Car'])
             elif cls_id == 11: 
@@ -259,31 +310,23 @@ def run():
             elif cls_id == 0: 
                 draw_labeled_box(display_frame, x1, y1, x2, y2, f"Person {conf:.2f}", COLORS['Person'])
 
-        draw_hud(display_frame, latency_ms)
-
-        # --- GPU BUSY WAIT ---
-        target_time = loop_start_time + TARGET_FRAME_TIME
-
-        small_frame = cv2.resize(display_frame, (0, 0), fx=0.5, fy=0.5)
-        cv2.imshow("Final Demo", small_frame)
-
-        #cv2.imshow("Final Demo", display_frame)
-        if cv2.waitKey(1) == ord('q'): break
+        # Calcul du FPS réel
+        fps_counter += 1
+        if time.time() - fps_start_time >= 1.0:
+            current_fps = fps_counter / (time.time() - fps_start_time)
+            fps_counter = 0
+            fps_start_time = time.time()
         
-        while time.time() < target_time:
-            torch.mm(dummy_a, dummy_b, out=dummy_a)
-            torch.cuda.synchronize()
-
-            
-        total_time = (time.time() - loop_start_time) * 1000
-        print(f"Inference: {latency_ms:.2f}ms | Total Loop: {total_time:.2f}ms")
-
-
-
+        draw_hud(display_frame, latency_ms, current_fps)
+        # Affichage
+        cv2.imshow("Live Camera - Press 'q' to quit", display_frame)
+        if cv2.waitKey(1) == ord('q'): 
+            break
 
     reader.stop()
     cv2.destroyAllWindows()
     gc.enable()
 
 if __name__ == "__main__":
+    #set_jetson_performance()
     run()

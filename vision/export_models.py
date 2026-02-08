@@ -1,3 +1,5 @@
+""" Fichier pour exporter les modèles en trt """
+
 import torch
 import torch.nn as nn
 from ultralytics import YOLO
@@ -5,7 +7,7 @@ from TwinLite import TwinLiteNet
 
 # --- CONFIG ---
 DEVICE = torch.device('cuda:0')
-YOLO_PATH = r'../models/yolo26n.pt'
+YOLO_PATH = r'../models/yolo26m.pt'
 #CLASSIFIER_PATH = "../models/traffic_classifier.pth"
 #TWINLITE_PATH = "../models/TwinLiteNet.pth"
 

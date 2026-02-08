@@ -7,7 +7,7 @@ from ultralytics import YOLO
 from tqdm import tqdm
 from collections import defaultdict
 
-MODEL_PATH = r'runs/detect/runs/train/yolo26_traffic_m_optim/weights/best.pt'
+MODEL_PATH = r'runs/detect/runs/train/yolo26_traffic_m_optim/weights/TwinLiteNet.pt'
 VAL_IMG_PATH = r'output_dataset/images/val'
 THRESHOLDS = np.arange(0.05, 0.65, 0.05)
 

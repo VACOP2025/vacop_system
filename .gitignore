@@ -2,6 +2,7 @@ build/
 install/
 log/
 .colcon/
+
 .vscode/
 __pycache__/
 *.pyc
@@ -13,19 +14,15 @@ debug_fp_red/
 output_dataset/
 runs/
 
-models/yolo26m.engine
-models/yolo26m.onnx
 
 
-TEST_VIDEO/video/
-TEST_VIDEO/models/
-TEST_VIDEO/result_demo.avi
-TEST_VIDEO/find_trt.py
-TEST_VIDEO/classifier.onnx
-TEST_VIDEO/classifier.engine
-TEST_VIDEO/run_video_demo.py
-TEST_VIDEO/twinlite.engine
-TEST_VIDEO/twinlite.onnx
+*.pt
+*.pth
+*.engine
+*.onnx
+
+TEST_VIDEO/
+
 
 to_review/
 train_classifier/
@@ -50,4 +47,4 @@ step3_split_dataset.py
 step4_train_yolo.py
 visualize_inference.py
 
-yolo26n.pt
+
