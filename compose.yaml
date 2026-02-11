@@ -1,0 +1,67 @@
+services:
+  # ---------------------------------------------------------
+  # SERVICE 1 : VISION 
+  # ---------------------------------------------------------
+  vision:
+    image: vacop:v3
+    container_name: vacop_vision
+    runtime: nvidia
+    network_mode: "host"
+    ipc: host
+    privileged: true
+    environment:
+      - DISPLAY=:0
+      - XAUTHORITY=/root/.Xauthority
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - ROS_DOMAIN_ID=0
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ~/vacop_jetson:/root/vacop_ws
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - $HOME/.Xauthority:/root/.Xauthority:ro
+      - /tmp/argus_socket:/tmp/argus_socket
+      - /usr/sbin/nvpmodel:/usr/sbin/nvpmodel
+      - /usr/bin/jetson_clocks:/usr/bin/jetson_clocks
+    working_dir: /root/vacop_ws
+    command: >
+      bash -c "source /opt/ros/humble/install/setup.bash &&
+               python3 /root/vacop_ws/src/vacop_vision/vacop_vision/vision/vision_node.py"
+
+  # ---------------------------------------------------------
+  # SERVICE 2 : MAPPING 
+  # ---------------------------------------------------------
+  mapping:
+    build:
+      context: .
+      dockerfile: Dockerfile.mapping
+    image: vacop_mapping:latest
+    container_name: vacop_mapping
+    runtime: nvidia
+    network_mode: "host"
+    ipc: host
+    privileged: true
+    environment:
+      - DISPLAY=:0
+      - XAUTHORITY=/root/.Xauthority
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - ROS_DOMAIN_ID=0
+      - ROS_VERSION=2
+      - ROS_DISTRO=humble
+    volumes:
+      - ~/vacop_jetson:/root/vacop_ws
+      - ~/.ros:/root/.ros
+    #depends_on: 
+    #  - vision
+    command: >
+      bash -c "source /opt/ros/humble/setup.bash &&
+               cd /root/vacop_ws &&
+               echo '--- Etape 1: Messages ---' &&
+               colcon build --symlink-install --packages-select rslidar_msg &&
+               source install/setup.bash &&
+               echo '--- Etape 2: LiDAR et Mapping ---' &&
+               colcon build --symlink-install --packages-select rslidar_sdk vacop_mapping &&
+               source install/setup.bash &&
+               export AMENT_PREFIX_PATH=/root/vacop_ws/install:$$AMENT_PREFIX_PATH &&
+               ros2 launch vacop_mapping rtabmap_lidar_launch.py"

@@ -1,0 +1,2 @@
+FROM vacop:v4
+RUN apt-get update && apt-get install -y python3-rclpy && rm -rf /var/lib/apt/lists/*
