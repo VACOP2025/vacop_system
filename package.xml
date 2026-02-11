@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>vacop_system</name>
+  <name>vacop_vision</name>
   <version>0.1.0</version>
   <description>Système de vision et perception pour VACOP sur Jetson</description>
-  <maintainer email="user@todo.todo">Vacop Team</maintainer>
+  <maintainer email="ayoubbiof2@gmail.com">Ayoub Hadi</maintainer>
   <license>TODO</license>
 
   <depend>rclpy</depend>

@@ -28,8 +28,8 @@ CAMERA_HEIGHT = 720
 CAMERA_FPS = 30
 
 # Chemins des modèles
-WORKSPACE_PATH = "/root/vacop_ws/src/vacop_system"
-
+#WORKSPACE_PATH = "/root/vacop_ws/src/vacop_vision"
+WORKSPACE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 YOLO_ENGINE = os.path.join(WORKSPACE_PATH, "models/yolo26m.engine")
 TWINLITE_ENGINE = os.path.join(WORKSPACE_PATH, "models/twinlite.engine")
 CLASSIFIER_ENGINE = os.path.join(WORKSPACE_PATH, "models/classifier.engine")
@@ -205,7 +205,6 @@ class JetsonPerceptionNode(Node):
         if frame is None:
             return
 
-        # Copie pour le dessin
         display_frame = frame.copy()
         timestamp = self.get_clock().now().to_msg()
         header_frame_id = "camera_link"
