@@ -7,12 +7,12 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     
-    # --- CONFIGURATION DES TOPICS (Vérifiez les noms !) ---
+    # --- CONFIGURATION ---
     lidar_topic = '/rslidar_points'
-    gps_topic   = '/gps/fix'
-    imu_topic   = '/imu/data'      
+    imu_topic   = '/imu/data'
+    gps_topic   = '/vacop/gnss/fix'
     
-    # --- CONFIGURATION DES FRAMES ---
+    # --- FRAMES ---
     robot_frame = 'base_link' 
     odom_frame  = 'odom_lidar'
     
@@ -24,23 +24,18 @@ def generate_launch_description():
                 os.path.join(rslidar_dir, 'launch', 'start.py') 
             )
         )
-    except Exception as e:
-        print(f"ATTENTION: Impossible de trouver rslidar_sdk. Erreur: {e}")
+    except Exception:
         lidar_launch = Node(package='dummy', executable='dummy') 
 
-    # --- PARTIE 2 : TF STATIQUES (Position des capteurs) ---
-    
-    # 1. Position GPS (Ex: 0,0,0 par défaut)
-    gps_tf = Node(
+    # --- PARTIE 2 : TF STATIQUES ---
+    # Lidar vers Base Link (Frame 'rslidar' d'après tes logs)
+    lidar_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
-        name='gps_tf_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'gps_link']
+        name='lidar_tf_publisher',
+        arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'rslidar']
     )
-    
-    # 2. Position IMU (NOUVEAU)
-    # Important : Si l'IMU est tourné, ajustez le 'yaw pitch roll' (les 3 derniers 0)
-    # Arguments: x y z yaw pitch roll parent child
+
     imu_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -48,7 +43,14 @@ def generate_launch_description():
         arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'imu_link']
     )
 
-    # --- PARTIE 3 : KISS-ICP (Odométrie + IMU) ---
+    gps_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='gps_tf_publisher',
+        arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'gnss']
+    )
+
+    # --- PARTIE 3 : KISS-ICP (Odométrie) ---
     kiss_icp_node = Node(
         package='kiss_icp',
         executable='kiss_icp_node',
@@ -58,12 +60,9 @@ def generate_launch_description():
             'topic': lidar_topic,
             'visualize': False,
             'deskew': True,
-            'max_range': 50.0,
-            'min_range': 2.0,
             'base_frame': robot_frame,
             'odom_frame': odom_frame,
             'publish_odom_tf': True,
-
         }],
         remappings=[
             ('pointcloud_topic', lidar_topic),
@@ -72,7 +71,7 @@ def generate_launch_description():
         ]
     )
 
-    # --- PARTIE 4 : RTAB-Map (SLAM + GPS + IMU) ---
+    # --- PARTIE 4 : RTAB-Map (SLAM Lidar Pur) ---
     slam_node = Node(
         package='rtabmap_slam', 
         executable='rtabmap', 
@@ -83,35 +82,29 @@ def generate_launch_description():
             'map_frame_id': 'map',
             'odom_frame_id': odom_frame,  
             
-            # Entrées
-            'subscribe_odom': True,
-            'odom_topic': '/kiss/odometry', 
+            # --- Désactivation de la Vision ---
+            'subscribe_depth': False,
+            'subscribe_rgb': False,
+            'subscribe_stereo': False,
             'subscribe_scan_cloud': True,
-            'approx_sync': True,
-            'sync_queue_size': 20,
-            'topic_queue_size': 10,
             
-            # --- GPS ---
-            'gps_topic': gps_topic,
+            # --- Odométrie & GPS ---
+            'subscribe_odom': True,
+            'odom_topic': '/kiss/odometry',
+            'subscribe_gps': True,
             'Rtabmap/LoopGPS': 'true',
             
-            # --- IMU (NOUVEAU) ---
-            'wait_imu_to_init': True, # Attend que l'IMU soit stable pour démarrer
+            # --- IMU ---
+            'wait_imu_to_init': True, 
             
-            # Tuning SLAM
-            'Reg/Strategy': '1',             
-            'Reg/Force3DoF': 'true',         
+            # --- Paramètres SLAM ---
+            'Reg/Strategy': '1', # 1=ICP
+            'Reg/Force3DoF': 'true',
             'RGBD/ProximityBySpace': 'true',
-            'RGBD/LinearUpdate': '0.2',
-            'Mem/IncrementalMemory': 'true', 
-            'Grid/RangeMax': '50.0',
             'Grid/CellSize': '0.1',
         }],
         remappings=[
             ('scan_cloud', lidar_topic),
-            ('rgb/image', '/ignored_rgb'),
-            ('depth/image', '/ignored_depth'),
-            ('rgb/camera_info', '/ignored_camera_info'),
             ('gps/fix', gps_topic),
             ('imu', imu_topic)
         ]
@@ -127,22 +120,21 @@ def generate_launch_description():
             'odom_frame_id': odom_frame,
             'subscribe_odom': True,
             'subscribe_scan_cloud': True,
-            'odom_topic': '/kiss/odometry',
-            'approx_sync': True,
-            'sync_queue_size': 20
+            'subscribe_gps': True,
+            'approx_sync': True
         }],
         remappings=[
             ('scan_cloud', lidar_topic),
-            ('rgb/image', '/ignored_rgb'),
-            ('depth/image', '/ignored_depth'),
-            ('rgb/camera_info', '/ignored_camera_info')
+            ('gps/fix', gps_topic),
+            ('odom', '/kiss/odometry')
         ]
     )
 
     return LaunchDescription([
         lidar_launch,
-        gps_tf,
+        lidar_tf,
         imu_tf,
+        gps_tf,
         kiss_icp_node,
         slam_node,
         viz_node
