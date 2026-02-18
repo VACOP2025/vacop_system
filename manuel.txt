@@ -1,0 +1,239 @@
+================================================================================
+         MANUEL D'UTILISATION — SYSTÈME VACOP (Vision & Mapping)
+                     Jetson Orin NX — ROS 2 Humble
+================================================================================
+
+                              TABLE DES MATIÈRES
+
+  1. Vue d'ensemble du système
+  2. Matériel requis
+  3. Mise en route
+  4. Lancement du système
+  5. Vérification du bon fonctionnement
+  6. Utilisation au quotidien
+  7. Arrêt du système
+  8. Problèmes potentiels et solutions
+  9. Contacts
+
+================================================================================
+1. VUE D'ENSEMBLE DU SYSTÈME
+================================================================================
+
+Le système VACOP embarque deux modules logiciels tournant en parallèle sur la
+Jetson Orin NX via Docker :
+
+  ┌─────────────────────────────────────────┐
+  │  MODULE VISION      (container vision)  │
+  │  • Caméra USB → YOLO + TwinLiteNet      │
+  │  • Détection : personnes, voitures,     │
+  │    panneaux STOP, feux tricolores        │
+  │  • Segmentation : zone roulable +       │
+  │    lignes de voie                        │
+  │  • Publication ROS 2 temps réel  │
+  └─────────────────────────────────────────┘
+  ┌─────────────────────────────────────────┐
+  │  MODULE MAPPING     (container mapping) │
+  │  • LiDAR Robosense → RTAB-Map           │
+  │  • Cartographie et localisation (SLAM)  │
+  │  • Odométrie ICP                        │
+  │  • Publication de la carte et du TF     │
+  └─────────────────────────────────────────┘
+
+Les deux modules communiquent via ROS 2 (DDS, réseau hôte partagé).
+Le ROS_DOMAIN_ID utilisé est 4.
+
+================================================================================
+2. MATÉRIEL REQUIS
+================================================================================
+
+  - NVIDIA Jetson Orin NX (avec JetPack installé, c'est, bien évidemment, déjà le cas pour la Jetson utilisée)
+  - Caméra USB branchée sur /dev/video0
+  - LiDAR Robosense RS-LiDAR (connexion réseau ou USB selon modèle)
+  - Alimentation suffisante pour la Jetson en mode performance
+
+  VÉRIFICATIONS PHYSIQUES AVANT DÉMARRAGE :
+  [ ] Caméra branchée sur le port USB
+  [ ] LiDAR alimenté et connecté
+  [ ] Jetson alimentée et démarrée
+  [ ] Connexion SSH ou écran disponible pour la prise en main
+
+
+
+================================================================================
+3. MISE EN ROUTE
+================================================================================
+
+
+  3.1 VÉRIFIER LES IMAGES DOCKER PRESENTES ET LES CONTAINERS SI BESOIN 
+
+  3.2 VÉRIFIER L'EMPLACEMENT DES MODÈLES TensorRT (module vision)
+  ──────────────────────────────────────────────────
+    Les moteurs TensorRT doivent être présents dans :
+    ~/vacop_jetson/src/vacop_vision/models/
+
+      yolo26m.engine       → détection d'objets
+      twinlite.engine      → segmentation zone roulable
+      classifier.engine    → classification feux tricolores
+
+    Vérification :
+      ls ~/vacop_jetson/src/vacop_vision/models/
+
+================================================================================
+4. LANCEMENT DU SYSTÈME
+================================================================================
+
+  4.1 LANCEMENT COMPLET (vision + mapping)
+  ──────────────────────────────────────────
+    cd ~/vacop_system
+
+    # En mode interactif (logs visibles dans le terminal)
+    docker compose up
+
+    # En mode arrière-plan 
+    docker compose up -d
+
+  4.2 LANCEMENT D'UN SEUL MODULE
+  ────────────────────────────────
+    # Vision uniquement
+    docker compose up vision
+
+    # Mapping uniquement
+    docker compose up mapping
+
+  4.3 CE QUI SE PASSE AU DÉMARRAGE
+  ──────────────────────────────────
+    Les deux containers démarrent en parallèle :
+
+    Container VISION  :
+      [1] Chargement des moteurs TensorRT (YOLO, TwinLiteNet, Classifier)
+      [2] Warmup GPU (5 passes à vide)
+      [3] Ouverture caméra /dev/video0
+      [4] Début de l'inférence et publication ROS 2
+
+    Container MAPPING  :
+      [1] colcon build — rslidar_msg
+      [2] colcon build — rslidar_sdk, vacop_mapping, et autres packages   
+      [3] Lancement de rtabmap_lidar_launch.py
+      [4] Démarrage du driver LiDAR et de RTAB-Map
+
+    NOTE : Le module mapping prend plus de temps à démarrer en raison
+    de la compilation des packages ROS 2 mentionnés à chaque lancement.
+
+================================================================================
+5. VÉRIFICATION DU BON FONCTIONNEMENT
+================================================================================
+
+  Ouvrir un terminal sur la Jetson (ou en SSH) :
+
+  5.1 VÉRIFIER QUE LES CONTAINERS TOURNENT
+  ──────────────────────────────────────────
+    docker ps
+
+    Vous devez voir :
+      vacop_vision    → Up
+      vacop_mapping   → Up
+
+  5.2 VÉRIFIER LES TOPICS ROS 2
+  ───────────────────────────────
+    # Dans un terminal avec ROS 2 sourcé sur la Jetson
+    export ROS_DOMAIN_ID=4
+    source /opt/ros/humble/setup.bash
+
+    ros2 topic list
+
+    Topics attendus (vision) :
+      /perception/debug_view
+      /perception/drivable_area
+      /perception/detections
+
+    Topics attendus (mapping) :
+      /rslidar_points
+      /map
+      /tf
+      /tf_static
+
+
+  5.3 CONSULTER LES LOGS EN TEMPS RÉEL
+  ──────────────────────────────────────
+    # Logs module vision
+    docker logs -f vacop_vision
+
+    # Logs module mapping
+    docker logs -f vacop_mapping
+
+================================================================================
+6. UTILISATION AU QUOTIDIEN
+================================================================================
+
+  6.1 APRÈS UN REDÉMARRAGE DE LA JETSON
+  ───────────────────────────────────────
+    Le système ne démarre PAS automatiquement.
+    Il faut relancer manuellement :
+
+      cd ~/vacop_system
+      docker compose up -d
+
+  6.2 MODIFIER UN PARAMÈTRE DU MODULE VISION
+  ────────────────────────────────────────────
+    Les paramètres (seuils, résolution caméra, modèles) se trouvent dans :
+      ~/vacop_jetson/src/vacop_vision/vacop_vision/vision/vision_node.py
+
+    Modifier le fichier, puis redémarrer uniquement le container vision :
+      docker compose restart vision
+
+  6.3 MODIFIER UN PARAMÈTRE DU MODULE MAPPING
+  ─────────────────────────────────────────────
+    Les launch files se trouvent dans :
+      ~/vacop_jetson/src/vacop_mapping/launch/
+
+    Modifier le fichier, puis redémarrer le container mapping :
+      docker compose restart mapping
+    (le colcon build se relancera automatiquement)
+
+
+
+================================================================================
+7. ARRÊT DU SYSTÈME
+================================================================================
+
+  # Arrêt propre des deux containers
+  docker compose down
+
+  # Arrêt d'un seul module
+  docker compose stop vision
+  docker compose stop mapping
+
+  NOTE : docker compose down supprime les containers mais PAS les images.
+  Les données de cartographie (fichier .db) sauvegardées dans ~/.ros sont conservées.
+  Le fichier .db généré va écraser celui existant de le ~/.ros
+
+================================================================================
+8. PROBLÈMES POTENTIELS ET SOLUTIONS
+================================================================================
+
+  ✗ ERREUR : "Cannot open /dev/video0"
+  ──────────────────────────────────────
+    La caméra n'est pas détectée.
+    → Vérifier le branchement USB
+    → Vérifier : ls /dev/video*
+    → Si la caméra est sur un autre index, modifier CAMERA_INDEX dans
+      vision_node.py
+
+  ✗ MODULE VISION DÉMARRE MAIS PAS DE DÉTECTIONS
+  ────────────────────────────────────────────────
+    → Vérifier que les fichiers .engine sont présents dans models/
+    → Consulter : docker logs vacop_vision
+    → Les moteurs TensorRT doivent être regénérés si la Jetson ou
+      la version de JetPack a changé (les .engine ne sont pas portables)
+
+  ✗ LE MAPPING NE PUBLIE PAS DE CARTE
+  ──────────────────────────────────────
+    → Vérifier que le LiDAR est alimenté et accessible réseau
+    → Consulter : docker logs vacop_mapping
+    → Vérifier le topic : ros2 topic echo /rslidar_points --once
+
+  ✗ ROS 2 topic list NE MONTRE RIEN le pc (ssh)
+  ────────────────────────────────────
+    → Vérifier que ROS_DOMAIN_ID=4 est bien exporté dans le terminal de votre pc
+    → export ROS_DOMAIN_ID=4
+
