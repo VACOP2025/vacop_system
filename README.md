@@ -72,6 +72,37 @@ Voici la liste complète des paramètres présents dans les scripts de lancement
 
 ---
 
+## Guide d'Exploitation Avancé
+
+### 1. Intégration GNSS/IMU pour la fermeture de boucle
+* **Topic GNSS (`/vacop/gnss/fix`)** :
+    * **Type** : `vacop/gnss/Fix`
+    * **Contenu** : Ce topic envoie la **Latitude**, **Longitude** et **Altitude**.
+    * **Importance de la Covariance** : Avec votre précision **RTK de 10 cm**, la matrice de covariance (`position_covariance`) envoyée dans le message doit refléter cette certitude (valeurs faibles, autour de 0.01). 
+    * **Rôle dans le SLAM** : Si la covariance est trop élevée (mauvais signal), RTAB-Map ignorera le GPS. Si elle est faible, il l'utilisera pour recaler l'ensemble de la carte Lidar sur des coordonnées géographiques réelles.
+
+* **Topic IMU (`/imu/data`)** :
+    * **Type** : `sensor_msgs/msg/Imu`
+    * **Rôle** : Fournit l'orientation (Quaternion), la vitesse angulaire et l'accélération linéaire.
+    * **Utilité** : L'IMU permet de stabiliser l'odométrie Lidar. Elle aide l'algorithme à savoir si le robot a réellement tourné ou si le Lidar a simplement été trompé par un mouvement brusque. Le paramètre `wait_imu_to_init: True` garantit que le robot connaît son inclinaison avant de commencer à mapper.
+
+### 2. Comment nettoyer la carte ?
+* **Temps réel** : L'augmentation de `Icp/VoxelSize` permet d'ignorer les petits débris ou l'herbe haute.
+* **Filtre de sol** : Utiliser le topic /perception/scan/no_ground pour que RTAB-Map ne cartographie pas l'herbe ou les irrégularités du terrain.
+
+### 3. Comment lancer le SLAM pour se géolocaliser ?
+Pour passer en mode localisation pure (utiliser une carte existante) :
+1. Réglez **`Mem/IncrementalMemory`** sur **`'false'`**.
+2. Le robot ne modifiera plus la carte et cherchera simplement sa position actuelle en comparant les scans Lidar aux données enregistrées.
+3.  **Le rôle du GNSS en localisation** : Le GPS (avec ses 10 cm de précision) permet au robot de savoir instantanément dans quelle zone de la carte il se trouve, évitant ainsi le problème du "kidnapped robot" (le robot ne sait pas où il est au démarrage).
+
+### 4. Ce qu'il manque pour une carte géoréférencée parfaite
+1. **Calibration du décalage (Static TF)** : Il faut définir avec précision la distance (X, Y, Z) entre le centre du Lidar et l'antenne GPS.
+2. **Convergence IMU** : L'IMU doit fournir un "Heading" (cap) précis pour aligner le Nord de la carte Lidar avec le Nord géographique.
+3. **Nœud de transformation** : L'ajout de `navsat_transform_node` (package `robot_localization`) est recommandé pour convertir les coordonnées Lat/Lon en coordonnées X/Y locales utilisables par RTAB-Map.
+
+---
+
 ## Lancement
 
 Pour lancer la version stable (Lidar ICP) :
