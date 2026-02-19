@@ -10,7 +10,7 @@ Le système est composé de **deux modules indépendants** qui communiquent via 
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Jetson Orin NX                        │
+│                    Jetson Orin NX                       │
 │                                                         │
 │  ┌─────────────────────┐   ┌─────────────────────────┐  │
 │  │  Container VISION   │   │  Container MAPPING      │  │
@@ -26,10 +26,10 @@ Le système est composé de **deux modules indépendants** qui communiquent via 
 │  │  • TwinLiteNet(TRT) │   │  • RTAB-Map             │  │
 │  │  • Classifier (TRT) │   │  • Odométrie ICP        │  │
 │  └─────────┬───────────┘   └───────────┬─────────────┘  │
-│            │                           │                 │
-│            └──────────┬────────────────┘                 │
-│                       │  ROS 2 (network_mode: host)      │
-│                  ROS_DOMAIN_ID=4                         │
+│            │                           │                │
+│            └──────────┬────────────────┘                │
+│                       │  ROS 2 (network_mode: host)     │
+│                  ROS_DOMAIN_ID=4                        │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -162,7 +162,7 @@ Les deux conteneurs communiquent via les topics suivants (réseau hôte partagé
 | `/perception/debug_view` | vision | — (debug) | `sensor_msgs/Image` |
 | `/rslidar_points` | mapping (driver) | mapping (RTAB-Map) | `sensor_msgs/PointCloud2` |
 | `/map` | mapping | — | `nav_msgs/OccupancyGrid` |
-| `/tf` / `/tf_static` | mapping | vision (optionnel) | `tf2_msgs/TFMessage` |
+| `/tf` / `/tf_static` | mapping | - | `tf2_msgs/TFMessage` |
 
 ---
 
@@ -187,8 +187,8 @@ Chaque package possède son propre `README.md` détaillant son fonctionnement in
 
 | Composant | Modèle |
 |---|---|
-| Calculateur | NVIDIA Jetson Orin NX |
-| Caméra | Caméra USB V4L2 (1280×720 @ 30 FPS) |
+| Calculateur | NVIDIA Jetson Orin NX 16GB |
+| Caméra | Caméra USB 3 V4L2 (1280×720 @ 30 FPS --> fixé par l'équipe perception via v4l2-ctl, la caméra supporte d'autres formats aussi) |
 | LiDAR | Robosense RS-LiDAR |
 | IMU | Intégrée / externe sur `imu_link` |
 
