@@ -4,8 +4,8 @@ import glob
 import os
 
 
-DATASET_DIR = "dataset" # path to the calibration board images, not included here — only the code is provided
-PATTERN = "photo_*.jpg" # same
+DATASET_DIR = os.path.join(os.path.dirname(__file__), "dataset_calib_cam/dataset_cam")  # path to the calibration board images
+PATTERN = "photo_*.jpg" 
 
 # Number of INNER CORNERS
 # Example: 9x6 square checkerboard -> (8,5) inner corners
